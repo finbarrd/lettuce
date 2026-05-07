@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import GameGrid from './GameGrid.jsx';
 import ScoreBoard from './ScoreBoard.jsx';
+import DefinitionChallenge from './DefinitionChallenge.jsx';
 import {
   createGameState,
   spawnPiece,
@@ -12,6 +13,7 @@ import {
   LETTUCE,
 } from '../game/engine.js';
 import { initDictionary } from '../game/dictionary.js';
+import { buildChallenge, prefetchDecoys } from '../game/definitions.js';
 
 export default function Game() {
   const [gameState, setGameState] = useState(null);
@@ -20,6 +22,8 @@ export default function Game() {
   const [showHelp, setShowHelp] = useState(false);
   const [dictReady, setDictReady] = useState(false);
   const [scorePopups, setScorePopups] = useState([]);
+  const [challenge, setChallenge] = useState(null);
+  const [pendingPoints, setPendingPoints] = useState(0);
   const gameRef = useRef(null);
   const dropTimerRef = useRef(null);
   const prevScoreRef = useRef(0);
@@ -28,6 +32,7 @@ export default function Game() {
   // Load dictionary on mount
   useEffect(() => {
     initDictionary().then(() => setDictReady(true));
+    prefetchDecoys();
   }, []);
 
   // Start a new game
@@ -72,7 +77,7 @@ export default function Game() {
     </div>
   );
 
-  // Detect new words and show score popups
+  // Detect new words and trigger definition challenge
   useEffect(() => {
     if (!gameState) return;
     const newWords = gameState.wordsFound;
@@ -80,19 +85,46 @@ export default function Game() {
     if (newWords.length > prevWords.length) {
       const scoreDelta = gameState.score - prevScoreRef.current;
       const addedWords = newWords.slice(prevWords.length);
-      const popup = {
-        id: Date.now(),
-        points: scoreDelta,
-        words: addedWords,
-      };
-      setScorePopups(prev => [...prev, popup]);
-      setTimeout(() => {
-        setScorePopups(prev => prev.filter(p => p.id !== popup.id));
-      }, 1500);
+
+      // Pick one word to challenge (the longest/most interesting)
+      const challengeWord = [...addedWords].sort((a, b) => b.length - a.length)[0];
+
+      // Pause and fetch challenge
+      setPaused(true);
+      setPendingPoints(scoreDelta);
+      buildChallenge(challengeWord).then(result => {
+        if (result) {
+          setChallenge(result);
+        } else {
+          // API failed - award points freely and show popup
+          setPaused(false);
+          showScorePopup(addedWords, scoreDelta);
+        }
+      });
     }
     prevScoreRef.current = gameState.score;
     prevWordsRef.current = newWords;
-  }, [gameState?.score, gameState?.wordsFound]);
+  }, [gameState?.wordsFound?.length, gameState?.score]);
+
+  const showScorePopup = (words, points) => {
+    const popup = { id: Date.now(), points, words };
+    setScorePopups(prev => [...prev, popup]);
+    setTimeout(() => {
+      setScorePopups(prev => prev.filter(p => p.id !== popup.id));
+    }, 1500);
+  };
+
+  const handleChallengeAnswer = useCallback((correct) => {
+    if (!correct) {
+      // Wrong answer - remove the pending points
+      setGameState(prev => prev ? { ...prev, score: prev.score - pendingPoints } : prev);
+    }
+    const words = challenge ? [challenge.word] : [];
+    showScorePopup(words, correct ? pendingPoints : 0);
+    setChallenge(null);
+    setPendingPoints(0);
+    setPaused(false);
+  }, [pendingPoints, challenge]);
 
   const gameStateRef = useRef(null);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
@@ -240,6 +272,9 @@ export default function Game() {
             <div className="help-overlay">
               {instructions}
             </div>
+          )}
+          {challenge && (
+            <DefinitionChallenge challenge={challenge} onAnswer={handleChallengeAnswer} />
           )}
         </div>
         <div className="sidebar">
