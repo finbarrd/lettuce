@@ -17,9 +17,13 @@ export default function Game() {
   const [gameState, setGameState] = useState(null);
   const [started, setStarted] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [dictReady, setDictReady] = useState(false);
+  const [scorePopups, setScorePopups] = useState([]);
   const gameRef = useRef(null);
   const dropTimerRef = useRef(null);
+  const prevScoreRef = useRef(0);
+  const prevWordsRef = useRef([]);
 
   // Load dictionary on mount
   useEffect(() => {
@@ -37,26 +41,80 @@ export default function Game() {
 
   const togglePause = useCallback(() => {
     setPaused(p => !p);
+    setShowHelp(false);
   }, []);
 
-  // Game loop - auto drop
+  const toggleHelp = useCallback(() => {
+    setShowHelp(h => {
+      if (!h) setPaused(true);
+      return !h;
+    });
+  }, []);
+
+  const instructions = (
+    <div className="instructions">
+      <h3>Controls</h3>
+      <ul>
+        <li><strong>← →</strong> Move letter left/right</li>
+        <li><strong>↑</strong> Switch between consonant/vowel</li>
+        <li><strong>↓</strong> Soft drop</li>
+        <li><strong>Space</strong> Hard drop</li>
+        <li><strong>Esc</strong> Pause/Resume</li>
+      </ul>
+      <h3>Rules</h3>
+      <ul>
+        <li>Each piece offers a <strong>consonant</strong> and a <strong>vowel</strong></li>
+        <li>Form words <strong>horizontally</strong> or <strong>vertically</strong> (4+ letters)</li>
+        <li>Score = sum of letter values × word length</li>
+        <li><strong>🥬 Lettuce</strong> is a wildcard - type a letter to choose (one chance!)</li>
+        <li>Get <strong>10 words</strong> to level up</li>
+      </ul>
+    </div>
+  );
+
+  // Detect new words and show score popups
+  useEffect(() => {
+    if (!gameState) return;
+    const newWords = gameState.wordsFound;
+    const prevWords = prevWordsRef.current;
+    if (newWords.length > prevWords.length) {
+      const scoreDelta = gameState.score - prevScoreRef.current;
+      const addedWords = newWords.slice(prevWords.length);
+      const popup = {
+        id: Date.now(),
+        points: scoreDelta,
+        words: addedWords,
+      };
+      setScorePopups(prev => [...prev, popup]);
+      setTimeout(() => {
+        setScorePopups(prev => prev.filter(p => p.id !== popup.id));
+      }, 1500);
+    }
+    prevScoreRef.current = gameState.score;
+    prevWordsRef.current = newWords;
+  }, [gameState?.score, gameState?.wordsFound]);
+
+  const gameStateRef = useRef(null);
+  useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+
+  // Game loop - auto drop on a fixed interval, independent of input
   useEffect(() => {
     if (!gameState || gameState.gameOver || !gameState.currentPiece || paused) return;
 
+    const interval = gameState.dropInterval;
     dropTimerRef.current = setInterval(() => {
       setGameState(prev => {
-        if (!prev || prev.gameOver) return prev;
+        if (!prev || prev.gameOver || !prev.currentPiece) return prev;
         const next = dropPiece(prev);
-        // If piece was locked (no currentPiece), spawn new one
         if (!next.currentPiece && !next.gameOver) {
           return spawnPiece(next);
         }
         return next;
       });
-    }, gameState.dropInterval);
+    }, interval);
 
     return () => clearInterval(dropTimerRef.current);
-  }, [gameState?.dropInterval, gameState?.currentPiece, gameState?.gameOver, paused]);
+  }, [gameState?.gameOver, paused, !!gameState?.currentPiece, gameState?.dropInterval]);
 
   // Keyboard controls
   useEffect(() => {
@@ -133,19 +191,7 @@ export default function Game() {
         <div className="title-screen">
           <h1 className="game-title">🥬 Lettuce</h1>
           <p className="game-subtitle">A word-building falling letter game</p>
-          <div className="instructions">
-            <h3>How to Play</h3>
-            <ul>
-              <li><strong>← →</strong> Move letter left/right</li>
-              <li><strong>↑</strong> Switch between consonant/vowel</li>
-              <li><strong>↓</strong> Soft drop</li>
-              <li><strong>Space</strong> Hard drop</li>
-              <li><strong>🥬 Lettuce</strong> Type a letter to choose (one chance!)</li>
-              <li>Form words <strong>horizontally</strong> or <strong>vertically</strong></li>
-              <li>Words must be <strong>4+ letters</strong></li>
-              <li>Longer and rarer words score more!</li>
-            </ul>
-          </div>
+          {instructions}
           <button className="start-btn" onClick={startGame}>
             Start Game
           </button>
@@ -184,11 +230,27 @@ export default function Game() {
       <div className="game-layout">
         <div className="grid-wrapper">
           <GameGrid grid={gameState.grid} currentPiece={gameState.currentPiece} paused={paused} />
+          {scorePopups.map(popup => (
+            <div key={popup.id} className="score-popup">
+              <div className="score-popup-words">{popup.words.join(', ')}</div>
+              <div className="score-popup-points">+{popup.points}</div>
+            </div>
+          ))}
+          {showHelp && (
+            <div className="help-overlay">
+              {instructions}
+            </div>
+          )}
         </div>
         <div className="sidebar">
-          <button className={`pause-btn ${paused ? 'paused-active' : ''}`} onClick={togglePause}>
-            {paused ? '▶ Resume' : '⏸ Pause'}
-          </button>
+          <div className="sidebar-buttons">
+            <button className={`pause-btn ${paused ? 'paused-active' : ''}`} onClick={togglePause}>
+              {paused ? '▶ Resume' : '⏸ Pause'}
+            </button>
+            <button className="pause-btn" onClick={toggleHelp}>
+              {showHelp ? '✕ Close' : '? Help'}
+            </button>
+          </div>
           <ScoreBoard
             score={gameState.score}
             level={gameState.level}

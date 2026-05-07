@@ -79,21 +79,16 @@ export function pickConsonant(level) {
 }
 
 /**
- * Score a word. Scoring is logarithmic based on word length,
- * with bonus points for letters that are harder to use.
+ * Score a word. Sum of Scrabble-style letter values, multiplied by word length.
+ * Longer words with rare letters score significantly more.
  */
 export function scoreWord(word) {
   const len = word.length;
   if (len < 4) return 0;
 
-  // Base score: logarithmic scaling from 4-letter words upward
-  // 4 letters = 10pts, 5 = 25pts, 6 = 55pts, etc.
-  const baseScore = Math.round(10 * Math.pow(Math.log2(len - 2), 2));
-
-  // Bonus for unusual letters
-  const letterBonus = word
+  const letterTotal = word
     .split('')
     .reduce((sum, ch) => sum + (LETTER_VALUES[ch] || 0), 0);
 
-  return baseScore + letterBonus;
+  return letterTotal * len;
 }

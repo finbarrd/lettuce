@@ -186,10 +186,96 @@ body {
   position: relative;
 }
 
+/* Score popup */
+.score-popup {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 20;
+  animation: score-fly 1.5s ease-out forwards;
+}
+
+.score-popup-words {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 12px rgba(74, 222, 128, 0.6);
+}
+
+.score-popup-points {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 0 20px rgba(74, 222, 128, 0.8), 0 0 40px rgba(74, 222, 128, 0.4);
+}
+
+@keyframes score-fly {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2);
+  }
+  40% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -120%) scale(1);
+  }
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.sidebar-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sidebar-buttons .pause-btn {
+  flex: 1;
+}
+
+/* Help overlay */
+.help-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(26, 26, 46, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  z-index: 15;
+  overflow-y: auto;
+}
+
+.help-overlay .instructions {
+  padding: 1.5rem;
+  max-width: 100%;
+}
+
+.help-overlay .instructions h3 {
+  color: var(--accent);
+  margin-top: 1rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.help-overlay .instructions h3:first-child {
+  margin-top: 0;
 }
 
 /* Pause */
@@ -197,12 +283,14 @@ body {
   background: var(--bg-secondary);
   color: var(--text-secondary);
   border: 1px solid var(--border);
-  padding: 0.6rem 1rem;
-  font-size: 0.9rem;
+  padding: 0.5rem 0.4rem;
+  font-size: 0.78rem;
   font-weight: 600;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .pause-btn:hover {
@@ -240,6 +328,7 @@ body {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
+  font-weight: 600;
   animation: pulse 0.8s ease-in-out infinite alternate;
 }
 

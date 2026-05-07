@@ -172,8 +172,12 @@ export function dropPiece(state) {
   const newLevel = state.level + levelsGained;
   const remainingWords = newWordsThisLevel % WORDS_PER_LEVEL;
 
-  // Speed increases with level
-  const newDropInterval = Math.max(200, 1000 - (newLevel - 1) * 60);
+  // Speed: level gives big step-changes, piece count adds gradual pressure
+  // Every 10 pieces, drop interval shrinks by 3%
+  const newPieceCount = state.pieceCount + 1;
+  const baseInterval = 1000 - (newLevel - 1) * 60;
+  const pieceSpeedup = Math.pow(0.97, Math.floor(newPieceCount / 10));
+  const newDropInterval = Math.max(150, Math.round(baseInterval * pieceSpeedup));
 
   return {
     ...state,
