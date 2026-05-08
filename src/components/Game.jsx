@@ -13,7 +13,7 @@ import {
   LETTUCE,
 } from '../game/engine.js';
 import { initDictionary } from '../game/dictionary.js';
-import { buildChallenge, prefetchDecoys } from '../game/definitions.js';
+import { buildChallenge } from '../game/definitions.js';
 
 export default function Game() {
   const [gameState, setGameState] = useState(null);
@@ -32,7 +32,6 @@ export default function Game() {
   // Load dictionary on mount
   useEffect(() => {
     initDictionary().then(() => setDictReady(true));
-    prefetchDecoys();
   }, []);
 
   // Start a new game
@@ -88,19 +87,16 @@ export default function Game() {
 
       // Pick one word to challenge (the longest/most interesting)
       const challengeWord = [...addedWords].sort((a, b) => b.length - a.length)[0];
+      const result = buildChallenge(challengeWord);
 
-      // Pause and fetch challenge
-      setPaused(true);
-      setPendingPoints(scoreDelta);
-      buildChallenge(challengeWord).then(result => {
-        if (result) {
-          setChallenge(result);
-        } else {
-          // API failed - award points freely and show popup
-          setPaused(false);
-          showScorePopup(addedWords, scoreDelta);
-        }
-      });
+      if (result) {
+        setPaused(true);
+        setPendingPoints(scoreDelta);
+        setChallenge(result);
+      } else {
+        // No definition available - award points freely
+        showScorePopup(addedWords, scoreDelta);
+      }
     }
     prevScoreRef.current = gameState.score;
     prevWordsRef.current = newWords;

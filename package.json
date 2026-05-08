@@ -8,7 +8,11 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-  "keywords": ["game", "word", "tetris"],
+  "keywords": [
+    "game",
+    "word",
+    "tetris"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
