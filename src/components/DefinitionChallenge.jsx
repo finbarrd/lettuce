@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
 
+function maskWord(text, word) {
+  const stars = '*'.repeat(word.length);
+  const regex = new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  return text.replace(regex, stars);
+}
+
 export default function DefinitionChallenge({ challenge, onAnswer }) {
   const [selected, setSelected] = useState(null);
   const [revealed, setRevealed] = useState(false);
@@ -37,7 +43,7 @@ export default function DefinitionChallenge({ challenge, onAnswer }) {
                 onClick={() => handleChoice(choice)}
                 disabled={revealed}
               >
-                {choice}
+                {maskWord(choice, challenge.word)}
               </button>
             );
           })}
