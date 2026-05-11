@@ -1,4 +1,4 @@
-import { pickLetter, pickVowel, pickConsonant, scoreWord } from './letters.js';
+import { pickLetter, pickSingleTileLetter, pickDigraph, scoreWord } from './letters.js';
 import { isValidWord } from './dictionary.js';
 
 export const GRID_WIDTH = 6;
@@ -10,10 +10,51 @@ export const LETTUCE_CHANCE = 1 / 12; // ~1 in 12 blocks is a lettuce wildcard
 // Sentinel value for a lettuce wildcard on the grid (unresolved)
 export const LETTUCE = '🥬';
 
+// Anti-clockwise rotation: 4 states where letters[0] and letters[1]
+// rotate as a pair around the anchor point.
+// Offsets are [letters[0] offset, letters[1] offset] relative to anchor (row, col).
+// State 0: [0] left,  [1] right  (horizontal)
+// State 1: [0] below, [1] above  (vertical, anti-clockwise from horizontal)
+// State 2: [0] right, [1] left   (horizontal, reversed)
+// State 3: [0] above, [1] below  (vertical)
+const ROTATION_OFFSETS = [
+  [{ dr: 0, dc: 0 }, { dr: 0, dc: 1 }],   // [0] at anchor, [1] right
+  [{ dr: 1, dc: 0 }, { dr: 0, dc: 0 }],   // [0] below anchor, [1] at anchor
+  [{ dr: 0, dc: 1 }, { dr: 0, dc: 0 }],   // [0] right of anchor, [1] at anchor
+  [{ dr: 0, dc: 0 }, { dr: 1, dc: 0 }],   // [0] at anchor, [1] below
+];
+
+/**
+ * Get the two cell positions for a pair piece given anchor + rotation state.
+ */
+function getPairCells(row, col, rotationIndex) {
+  const offsets = ROTATION_OFFSETS[rotationIndex];
+  return [
+    { row: row + offsets[0].dr, col: col + offsets[0].dc },
+    { row: row + offsets[1].dr, col: col + offsets[1].dc },
+  ];
+}
+
+/**
+ * Check if all given cells are within grid bounds and unoccupied.
+ */
+function cellsFree(grid, cells) {
+  return cells.every(
+    c => c.row >= 0 && c.row < GRID_HEIGHT &&
+         c.col >= 0 && c.col < GRID_WIDTH &&
+         grid[c.row][c.col] === null
+  );
+}
+
 /**
  * Generate the next piece data.
- * Each piece offers two letters: one consonant and one vowel, in random order.
- * Lettuce wildcards replace both options with a single lettuce.
+ * Pieces are either:
+ * - Lettuce wildcard (single tile)
+ * - Single tile (high-value letter, score >= 3)
+ * - Pair tile (two-cell digraph of low-value letters, score 1-2)
+ *
+ * Single vs pair probability: ~30% single, ~70% pair (matching natural
+ * frequency since most common letters are low-value).
  */
 function generatePiece(level, piecesSinceLastLettuce) {
   let isLettuce = false;
@@ -24,17 +65,17 @@ function generatePiece(level, piecesSinceLastLettuce) {
   }
 
   if (isLettuce) {
-    return { letter: LETTUCE, isLettuce: true, pair: null };
+    return { type: 'single', letter: LETTUCE, isLettuce: true };
   }
 
-  const vowel = pickVowel(level);
-  const consonant = pickConsonant(level);
-  // Random order: left and right
-  const pair = Math.random() < 0.5
-    ? { left: consonant, right: vowel }
-    : { left: vowel, right: consonant };
+  // ~30% chance single tile, ~70% pair tile
+  if (Math.random() < 0.3) {
+    const letter = pickSingleTileLetter(level);
+    return { type: 'single', letter, isLettuce: false };
+  }
 
-  return { letter: pair.left, isLettuce: false, pair };
+  const [a, b] = pickDigraph(level);
+  return { type: 'pair', letters: [a, b], rotationIndex: 0 };
 }
 
 /**
@@ -45,40 +86,62 @@ export function createGameState() {
   return {
     grid: Array.from({ length: GRID_HEIGHT }, () => Array(GRID_WIDTH).fill(null)),
     currentPiece: null,
-    nextPiece: nextPieceData, // preview of next piece
+    nextPiece: nextPieceData,
     score: 0,
     wordsFound: [],
     pieceCount: 0,
     gameOver: false,
     level: 1,
     wordsThisLevel: 0,
-    dropInterval: 1000, // ms between automatic drops
+    dropInterval: 1000,
     piecesSinceLastLettuce: nextPieceData.isLettuce ? 0 : 1,
   };
 }
 
 /**
- * Spawn a new falling letter piece from the nextPiece queue,
- * and pre-generate the following piece for the preview.
+ * Spawn a new falling piece from the nextPiece queue.
  */
 export function spawnPiece(state) {
-  const col = Math.floor(GRID_WIDTH / 2);
+  const col = Math.floor(GRID_WIDTH / 2) - 1; // center, leaving room for pairs
+  const pieceData = state.nextPiece;
+  const sinceLettuce = pieceData.isLettuce ? 0 : state.piecesSinceLastLettuce;
+  const newNextPiece = generatePiece(state.level, sinceLettuce);
 
-  // Check if spawn position is blocked
-  if (state.grid[0][col] !== null) {
+  if (pieceData.type === 'single') {
+    if (state.grid[0][col] !== null) {
+      return { ...state, gameOver: true };
+    }
+    return {
+      ...state,
+      currentPiece: {
+        type: 'single',
+        letter: pieceData.letter,
+        row: 0,
+        col,
+        isLettuce: pieceData.isLettuce,
+        letterChosen: false,
+      },
+      nextPiece: newNextPiece,
+      pieceCount: state.pieceCount + 1,
+      piecesSinceLastLettuce: newNextPiece.isLettuce ? 0 : sinceLettuce + 1,
+    };
+  }
+
+  // Pair piece - spawns horizontal at top
+  const cells = getPairCells(0, col, pieceData.rotationIndex);
+  if (!cellsFree(state.grid, cells)) {
     return { ...state, gameOver: true };
   }
 
-  // Current piece comes from the pre-generated nextPiece
-  const { letter, isLettuce, pair } = state.nextPiece;
-
-  // Generate the new next piece
-  const sinceLettuce = isLettuce ? 0 : state.piecesSinceLastLettuce;
-  const newNextPiece = generatePiece(state.level, sinceLettuce);
-
   return {
     ...state,
-    currentPiece: { letter, row: 0, col, isLettuce, letterChosen: false, pair },
+    currentPiece: {
+      type: 'pair',
+      letters: pieceData.letters,
+      row: 0,
+      col,
+      rotationIndex: pieceData.rotationIndex,
+    },
     nextPiece: newNextPiece,
     pieceCount: state.pieceCount + 1,
     piecesSinceLastLettuce: newNextPiece.isLettuce ? 0 : sinceLettuce + 1,
@@ -87,10 +150,10 @@ export function spawnPiece(state) {
 
 /**
  * Choose a letter for a lettuce wildcard piece.
- * Only works once - if already chosen, does nothing.
  */
 export function chooseLettuceLetter(state, chosenLetter) {
   if (!state.currentPiece || state.gameOver) return state;
+  if (state.currentPiece.type !== 'single') return state;
   if (!state.currentPiece.isLettuce || state.currentPiece.letterChosen) return state;
 
   return {
@@ -104,20 +167,46 @@ export function chooseLettuceLetter(state, chosenLetter) {
 }
 
 /**
- * Switch the active letter of the current piece between the pair options.
- * Only works for non-lettuce pieces that have a pair.
+ * Rotate a pair piece anti-clockwise with Tetris-style wall kicks.
+ * If rotation is blocked in place, try shifting the anchor to nearby
+ * positions (left, right, up, left+up, right+up) to find a valid fit.
  */
-export function switchLetter(state) {
+export function rotatePiece(state) {
   if (!state.currentPiece || state.gameOver) return state;
-  if (state.currentPiece.isLettuce || !state.currentPiece.pair) return state;
+  if (state.currentPiece.type !== 'pair') return state;
 
-  const { pair, letter } = state.currentPiece;
-  const newLetter = letter === pair.left ? pair.right : pair.left;
+  const { row, col, rotationIndex } = state.currentPiece;
+  const newIndex = (rotationIndex + 1) % 4;
 
-  return {
-    ...state,
-    currentPiece: { ...state.currentPiece, letter: newLetter },
-  };
+  // Wall kick offsets to try: original position first, then shifts
+  const kicks = [
+    { dr: 0, dc: 0 },
+    { dr: 0, dc: -1 },  // left
+    { dr: 0, dc: 1 },   // right
+    { dr: -1, dc: 0 },  // up
+    { dr: -1, dc: -1 }, // up-left
+    { dr: -1, dc: 1 },  // up-right
+  ];
+
+  for (const kick of kicks) {
+    const kickRow = row + kick.dr;
+    const kickCol = col + kick.dc;
+    const newCells = getPairCells(kickRow, kickCol, newIndex);
+    if (cellsFree(state.grid, newCells)) {
+      return {
+        ...state,
+        currentPiece: {
+          ...state.currentPiece,
+          row: kickRow,
+          col: kickCol,
+          rotationIndex: newIndex,
+        },
+      };
+    }
+  }
+
+  // All kicks failed - rotation is truly blocked
+  return state;
 }
 
 /**
@@ -126,14 +215,20 @@ export function switchLetter(state) {
 export function movePiece(state, direction) {
   if (!state.currentPiece || state.gameOver) return state;
 
-  const newCol = state.currentPiece.col + direction;
-  if (newCol < 0 || newCol >= GRID_WIDTH) return state;
-  if (state.grid[state.currentPiece.row][newCol] !== null) return state;
+  const { row, col } = state.currentPiece;
+  const newCol = col + direction;
 
-  return {
-    ...state,
-    currentPiece: { ...state.currentPiece, col: newCol },
-  };
+  if (state.currentPiece.type === 'single') {
+    if (newCol < 0 || newCol >= GRID_WIDTH) return state;
+    if (state.grid[row][newCol] !== null) return state;
+    return { ...state, currentPiece: { ...state.currentPiece, col: newCol } };
+  }
+
+  // Pair piece: check both cells at new position
+  const newCells = getPairCells(row, newCol, state.currentPiece.rotationIndex);
+  if (!cellsFree(state.grid, newCells)) return state;
+
+  return { ...state, currentPiece: { ...state.currentPiece, col: newCol } };
 }
 
 /**
@@ -142,38 +237,54 @@ export function movePiece(state, direction) {
 export function dropPiece(state) {
   if (!state.currentPiece || state.gameOver) return state;
 
-  const { row, col, letter } = state.currentPiece;
+  const { row, col } = state.currentPiece;
   const newRow = row + 1;
 
-  // Can the piece move down?
-  if (newRow < GRID_HEIGHT && state.grid[newRow][col] === null) {
-    return {
-      ...state,
-      currentPiece: { ...state.currentPiece, row: newRow },
-    };
+  if (state.currentPiece.type === 'single') {
+    const { letter } = state.currentPiece;
+
+    // Can the piece move down?
+    if (newRow < GRID_HEIGHT && state.grid[newRow][col] === null) {
+      return { ...state, currentPiece: { ...state.currentPiece, row: newRow } };
+    }
+
+    // Lock single piece
+    const newGrid = state.grid.map(r => [...r]);
+    let finalLetter = letter;
+    if (state.currentPiece.isLettuce && !state.currentPiece.letterChosen) {
+      finalLetter = pickLetter(state.level);
+    }
+    newGrid[row][col] = finalLetter;
+
+    return lockAndScore(state, newGrid);
   }
 
-  // Lock piece in place
+  // Pair piece: try to drop both cells
+  const newCells = getPairCells(newRow, col, state.currentPiece.rotationIndex);
+  if (cellsFree(state.grid, newCells)) {
+    return { ...state, currentPiece: { ...state.currentPiece, row: newRow } };
+  }
+
+  // Lock pair piece - write both letters to grid
+  const currentCells = getPairCells(row, col, state.currentPiece.rotationIndex);
   const newGrid = state.grid.map(r => [...r]);
+  newGrid[currentCells[0].row][currentCells[0].col] = state.currentPiece.letters[0];
+  newGrid[currentCells[1].row][currentCells[1].col] = state.currentPiece.letters[1];
 
-  // If it's an unresolved lettuce, randomly assign a letter
-  let finalLetter = letter;
-  if (state.currentPiece.isLettuce && !state.currentPiece.letterChosen) {
-    finalLetter = pickLetter(state.level);
-  }
-  newGrid[row][col] = finalLetter;
+  return lockAndScore(state, newGrid);
+}
 
-  // Check for words and clear them
+/**
+ * After locking a piece, check for words, apply scoring and level progression.
+ */
+function lockAndScore(state, newGrid) {
   const { grid: clearedGrid, points, words } = findAndClearWords(newGrid);
 
-  // Level progression: advance level every WORDS_PER_LEVEL words
   const newWordsThisLevel = state.wordsThisLevel + words.length;
   const levelsGained = Math.floor(newWordsThisLevel / WORDS_PER_LEVEL);
   const newLevel = state.level + levelsGained;
   const remainingWords = newWordsThisLevel % WORDS_PER_LEVEL;
 
-  // Speed: level gives big step-changes, piece count adds gradual pressure
-  // Every 10 pieces, drop interval shrinks by 3%
   const newPieceCount = state.pieceCount + 1;
   const baseInterval = 1000 - (newLevel - 1) * 60;
   const pieceSpeedup = Math.pow(0.97, Math.floor(newPieceCount / 10));
@@ -204,6 +315,24 @@ export function hardDrop(state) {
     current = next;
   }
   return current;
+}
+
+/**
+ * Get the display cells for the current piece (used by rendering).
+ * Returns an array of { row, col, letter } objects.
+ */
+export function getCurrentPieceCells(piece) {
+  if (!piece) return [];
+
+  if (piece.type === 'single') {
+    return [{ row: piece.row, col: piece.col, letter: piece.letter }];
+  }
+
+  const cells = getPairCells(piece.row, piece.col, piece.rotationIndex);
+  return [
+    { row: cells[0].row, col: cells[0].col, letter: piece.letters[0] },
+    { row: cells[1].row, col: cells[1].col, letter: piece.letters[1] },
+  ];
 }
 
 /**

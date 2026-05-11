@@ -9,7 +9,7 @@ import {
   dropPiece,
   hardDrop,
   chooseLettuceLetter,
-  switchLetter,
+  rotatePiece,
   LETTUCE,
 } from '../game/engine.js';
 import { initDictionary } from '../game/dictionary.js';
@@ -59,15 +59,17 @@ export default function Game() {
     <div className="instructions">
       <h3>Controls</h3>
       <ul>
-        <li><strong>← →</strong> Move letter left/right</li>
-        <li><strong>↑</strong> Switch between consonant/vowel</li>
+        <li><strong>← →</strong> Move piece left/right</li>
+        <li><strong>↑</strong> Rotate pair (cycle order &amp; orientation)</li>
         <li><strong>↓</strong> Soft drop</li>
         <li><strong>Space</strong> Hard drop</li>
         <li><strong>Esc</strong> Pause/Resume</li>
       </ul>
       <h3>Rules</h3>
       <ul>
-        <li>Each piece offers a <strong>consonant</strong> and a <strong>vowel</strong></li>
+        <li><strong>Single tiles:</strong> Rare letters (B, C, F, H, etc.) fall alone</li>
+        <li><strong>Pair tiles:</strong> Common letter digraphs (TH, ER, IN, etc.) occupy two cells</li>
+        <li>Use <strong>↑</strong> to rotate pairs between horizontal/vertical and reverse order</li>
         <li>Form words <strong>horizontally</strong> or <strong>vertically</strong> (4+ letters)</li>
         <li>Score = sum of letter values × word length</li>
         <li><strong>🥬 Lettuce</strong> is a wildcard - type a letter to choose (one chance!)</li>
@@ -180,7 +182,7 @@ export default function Game() {
           break;
         case 'ArrowUp':
           e.preventDefault();
-          setGameState(prev => switchLetter(prev));
+          setGameState(prev => rotatePiece(prev));
           break;
         case 'ArrowDown':
           e.preventDefault();

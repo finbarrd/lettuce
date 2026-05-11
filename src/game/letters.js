@@ -15,6 +15,57 @@ export const LETTER_VALUES = {
   Y: 4, Z: 10,
 };
 
+// Letters with score >= 3 fall as single tiles
+export const SINGLE_TILE_LETTERS = new Set(
+  Object.entries(LETTER_VALUES)
+    .filter(([, v]) => v >= 3)
+    .map(([l]) => l)
+);
+
+// Letters with score 1-2 are used in pair tiles
+export const PAIR_TILE_LETTERS = new Set(
+  Object.entries(LETTER_VALUES)
+    .filter(([, v]) => v <= 2)
+    .map(([l]) => l)
+);
+
+// Common English digraphs, weighted by rough frequency
+const CURATED_DIGRAPHS = [
+  'TH', 'TH', 'TH',  // very common
+  'ER', 'ER', 'ER',
+  'IN', 'IN', 'IN',
+  'AN', 'AN',
+  'RE', 'RE',
+  'ON', 'ON',
+  'EN', 'EN',
+  'AT', 'AT',
+  'ES', 'ES',
+  'ED', 'ED',
+  'TE', 'TE',
+  'TI', 'TI',
+  'ST', 'ST',
+  'LE', 'LE',
+  'SE', 'SE',
+  'ND', 'ND',
+  'OR', 'OR',
+  'OU', 'OU',
+  'EA', 'EA',
+  'AR', 'AR',
+  'AL', 'AL',
+  'IT', 'IT',
+  'DE',
+  'NG',
+  'IS',
+  'NT',
+  'TO',
+  'IO',
+  'OT',
+  'RI',
+  'NE',
+  'LI',
+  'RA',
+];
+
 /**
  * Build a weighted letter pool for a given level.
  * Level 1 uses natural English frequency. Each subsequent level
@@ -76,6 +127,41 @@ export function pickConsonant(level) {
   }
   const pool = poolCache[level].filter(l => !VOWELS.has(l));
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Pick a random single-tile letter (score >= 3) based on the current level.
+ */
+export function pickSingleTileLetter(level) {
+  if (!poolCache[level]) {
+    poolCache[level] = buildWeightedPool(level);
+  }
+  const pool = poolCache[level].filter(l => SINGLE_TILE_LETTERS.has(l));
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Pick a random pair-eligible letter (score 1-2) based on the current level.
+ */
+function pickPairLetter(level) {
+  if (!poolCache[level]) {
+    poolCache[level] = buildWeightedPool(level);
+  }
+  const pool = poolCache[level].filter(l => PAIR_TILE_LETTERS.has(l));
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Pick a digraph pair for a pair tile.
+ * ~70% chance to pick a curated common digraph, ~30% to randomly combine
+ * two pair-eligible letters.
+ */
+export function pickDigraph(level) {
+  if (Math.random() < 0.7) {
+    const dg = CURATED_DIGRAPHS[Math.floor(Math.random() * CURATED_DIGRAPHS.length)];
+    return [dg[0], dg[1]];
+  }
+  return [pickPairLetter(level), pickPairLetter(level)];
 }
 
 /**
