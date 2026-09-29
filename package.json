@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Lettuce - A word-building falling letter game",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
